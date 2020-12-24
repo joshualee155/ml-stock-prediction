@@ -104,15 +104,89 @@ class Actor():
         
         self._action_gradients = tf.placeholder(tf.float32, [None, 1], name="action_grad")
         
-        self._var_grads = tf.gradients(self.action, self.network_params, -self._action_gradients)
+        self._var_grads = tf.gradients(self.action, self.network_params, -self._action_gradients, )
         
+        self._grad_norm = tf.global_norm( self._var_grads )
+
         self._train_op = self._optimizer.apply_gradients(zip(self._var_grads,self.network_params))      
         
+        # Add summary place holders
+        self.add_summary()
+        self.init_averages()
+
         #Initializing
         self._sess.run(tf.global_variables_initializer())
         self._sess.run([self.target_network_params[i].assign(self.network_params[i]) 
                         for i in range(len(self.target_network_params))])
-        
+
+    def add_summary(self):
+        """
+        Tensorboard stuff.
+
+        You don't have to change or use anything here.
+        """
+        # extra placeholders to log stuff from python
+        self.avg_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="avg_reward")
+        self.max_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="max_reward")
+        self.std_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="std_reward")
+
+        self.eval_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="eval_reward")
+
+        # extra summaries from python -> placeholders
+        tf.summary.scalar("Avg Reward", self.avg_reward_placeholder)
+        tf.summary.scalar("Max Reward", self.max_reward_placeholder)
+        tf.summary.scalar("Std Reward", self.std_reward_placeholder)
+        tf.summary.scalar("Eval Reward", self.eval_reward_placeholder)
+
+        # logging
+        self.merged = tf.summary.merge_all()
+        self.file_writer = tf.summary.FileWriter( 'result/actor_model/', self._sess.graph)    
+
+    def init_averages(self):
+        """
+        Defines extra attributes for tensorboard.
+
+        You don't have to change or use anything here.
+        """
+        self.avg_reward = 0.
+        self.max_reward = 0.
+        self.std_reward = 0.
+        self.eval_reward = 0.
+
+    def update_averages(self, rewards, scores_eval):
+        """
+        Update the averages.
+
+        You don't have to change or use anything here.
+
+        Args:
+            rewards: deque
+            scores_eval: list
+        """
+        self.avg_reward = np.mean(rewards)
+        self.max_reward = np.max(rewards)
+        self.std_reward = np.sqrt(np.var(rewards) / len(rewards))
+
+        if len(scores_eval) > 0:
+            self.eval_reward = scores_eval[-1]
+
+    def record_summary(self, t):
+        """
+        Add summary to tensorboard
+
+        You don't have to change or use anything here.
+        """
+
+        fd = {
+        self.avg_reward_placeholder: self.avg_reward,
+        self.max_reward_placeholder: self.max_reward,
+        self.std_reward_placeholder: self.std_reward,
+        self.eval_reward_placeholder: self.eval_reward,
+        }
+        summary = self._sess.run(self.merged, feed_dict=fd)
+        # tensorboard stuff
+        self.file_writer.add_summary(summary, t)  
+
     def create_actor_network(self):
         
         # neural featurizer parameters
@@ -141,6 +215,7 @@ class Actor():
     
     def act(self, state,  step = None):
         
+        # epsilon greedy
         if step is not None:
             epsilon = max(self.epsilon_min, min(self.epsilon, 1.0 - math.log10((step + 1) * self.epsilon_decay)))
             action = self.env.action_space.sample()[0].item() if (np.random.random() <= epsilon) else self._sess.run(self.action, feed_dict={self._state: state})
@@ -159,9 +234,12 @@ class Actor():
         return action
     
     def train(self, states_batch, actions_grads_batch): 
+
         feed_dict={
             self._state: states_batch,
             self._action_gradients: actions_grads_batch}
+        grad_norm = self._sess.run( self._grad_norm, feed_dict = feed_dict )
+        print( "Actor gradadient norm: {}".format( grad_norm ) )
         self._sess.run([self._train_op], feed_dict=feed_dict)
         
     def update_target_network(self):
@@ -269,8 +347,10 @@ class Critic():
             self._state: states_batch,
             self._q_expected: q_batch,
             self._action: actions_batch}
-
+        pre_train_loss = self._sess.run( self._loss, feed_dict = feed_dict )
         self._sess.run([self._train_op], feed_dict=feed_dict)
+        post_train_loss = self._sess.run( self._loss, feed_dict = feed_dict )
+        print( "Pre-train loss: {:.2f}|Post-train loss: {:.2f}".format( pre_train_loss, post_train_loss ) )
         
     def update_target_network(self):
         self._sess.run(self.update_target_network_params)        
