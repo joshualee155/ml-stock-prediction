@@ -24,7 +24,9 @@ class Actor():
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr = learning_rate)
 
-        self.update_target_network()
+        # syncronize actor and target
+        for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
+            var2 = var1
 
     def add_summary(self):
         """
@@ -149,7 +151,9 @@ class Critic():
         # optimizer only applies to model network
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr = learning_rate)
         
-        self.update_target_network()
+        # synchronize critic and target
+        for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
+            var2 = var1
         
     def create_critic_network(self):
         
