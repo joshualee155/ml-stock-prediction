@@ -8,3 +8,7 @@ register(
     id='test_trading-v0',
     entry_point='trading_env.envs:TestTradingEnv',
 )
+register(
+    id='test_trading-v2',
+    entry_point='trading_env.envs:TestTradingEnv',
+)
