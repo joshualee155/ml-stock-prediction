@@ -121,9 +121,9 @@ class Actor():
         action = self.model(state).detach().cpu().item()
         return action
 
-    def act_target(self, state):
-        state = torch.from_numpy(state).float().to(device)
-        action = self.target(state).detach().cpu().item()
+    def act_target(self, states):
+        # called at calculating q_targets
+        action = self.target(states)
         return action
 
     def update_target_network(self):
@@ -180,11 +180,9 @@ class Critic():
         return self.model(inputs).squeeze()
 
     def get_target_q_values(self, states, actions):
-        states = torch.Tensor(states).float().to(device)
-        actions = torch.Tensor(actions).float().to(device)
-        inputs = torch.cat([states, actions.unsqueeze(1)], 1)
+        inputs = torch.cat([states, actions], 1)
 
-        return self.target(inputs).squeeze().item()
+        return self.target(inputs).squeeze()
     
     def update_target_network(self):
         
@@ -217,29 +215,27 @@ class DDPGAgent():
 
     def store_step(self, state, action, reward, next_state, done):
         
-        next_action = self.actor.act_target(next_state)
-        if not done:
-            q_next = self.critic.get_target_q_values([next_state], [next_action])
-            q_expected = reward + self._discount_rate * q_next
-        else:
-            q_expected = reward
-
-        self.memory.append([state, action, q_expected])
+        self.memory.append([state, action, reward, next_state, done])
     
     def train(self):
         
         batch = random.sample(self.memory, self._batch_size)
         
-        states, actions, qs_expected = zip(*batch)
+        states, actions, rewards, next_states, dones = zip(*batch)
 
         states = torch.Tensor(states).float().to(device)
         actions = torch.Tensor(actions).float().to(device).unsqueeze(1)
-        qs_expected = torch.Tensor(qs_expected).float().to(device)
+        rewards = torch.Tensor(rewards).float().to(device)
+        next_states = torch.Tensor(next_states).float().to(device)
+        dones = torch.Tensor(dones).float().to(device)
+
+        target_actions = self.actor.act_target(next_states)
+        q_targets = rewards + (1.0 - dones) * self._discount_rate * self.critic.get_target_q_values(next_states, target_actions)
         
         mse_loss = nn.MSELoss()
         
         q_values = self.critic.get_q_values(states, actions)
-        critic_loss = mse_loss( q_values, qs_expected )
+        critic_loss = mse_loss( q_values, q_targets )
 
         self.critic.optimizer.zero_grad()
         critic_loss.backward()
