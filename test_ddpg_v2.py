@@ -13,16 +13,9 @@ def main():
 
     env_trading = gym.make('test_trading-v2')
     NUM_EP = 400
-    date = datetime.datetime(2017, 7, 10, 0, 0)
-    data = env_trading.historical_data["close"]
-    # env_trading.reset(date=date)
-    # plt.plot(data[env_trading.start_index:env_trading.start_index + int(env_trading.episode_steps) 
-    #             if env_trading.start_index + int(env_trading.episode_steps) < data.shape[0]
-    #             else data.shape[0]])
-
-    # plt.show()
 
     agentDDPG = DDPGAgent(env_trading, 
+                        buffer_size=1000000,
                         tau = 0.001, 
                         actor_lr = 1e-4, 
                         critic_lr = 1e-4)
@@ -46,6 +39,22 @@ def main():
     actor_grads = []
     critic_grads = []
 
+    print("Populating memory buffer...")
+
+    while (len(agentDDPG.memory) < 100000):
+        state = env_trading.reset(date = date)
+        state = np.reshape(state,200)
+        while (True):
+            action = agentDDPG.actor.act(state)
+            action = np.clip( action + next(noise), -1, 1 )
+            next_state, reward, done, _ = env_trading.step(action)
+            state = np.reshape(state,200)
+            next_state = next_state.reshape(200)
+            agentDDPG.store_step(state, action, reward, next_state, done)
+            if done:
+                break
+
+
     for e in range(NUM_EP):
         state = np.reshape(env_trading.reset(date=date), 200)
         score = 0
@@ -54,6 +63,7 @@ def main():
         while(True):
             action = agentDDPG.actor.act(state)
             action += next( noise )
+            action = np.clip(action, -1, 1)
             next_state, reward, done, _ = env_trading.step( action )
             next_state = np.reshape(next_state, 200)
             score += reward
