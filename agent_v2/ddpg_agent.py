@@ -105,11 +105,11 @@ class Actor():
         
         model = nn.Sequential(
             nn.Linear(self.state_dim, h1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(h1, h2),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(h2, h3),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(h3, 1),
             nn.Tanh(),
         )
@@ -128,8 +128,9 @@ class Actor():
 
     def update_target_network(self):
         
-        for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
-            var2 = self._tau * var1 + (1-self._tau) * var2
+        with torch.no_grad():
+            for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
+                var2 = self._tau * var1 + (1-self._tau) * var2
 
 
 class Critic():
@@ -152,8 +153,9 @@ class Critic():
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr = learning_rate)
         
         # synchronize critic and target
-        for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
-            var2 = var1
+        with torch.no_grad():
+            for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
+                var2 = var1
         
     def create_critic_network(self):
         
@@ -186,19 +188,22 @@ class Critic():
     
     def update_target_network(self):
         
-        for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
-            var2 = self._tau * var1 + (1-self._tau) * var2
+        with torch.no_grad():
+            for var1, var2 in zip(self.model.parameters(), self.target.parameters()):
+                var2 = self._tau * var1 + (1-self._tau) * var2
         
 
 class DDPGAgent():
     def __init__(self, env, buffer_size = 1000000, discount_rate = 0.99, batch_size = 128, tau = 0.001, 
-                 actor_lr = 1e-5, critic_lr = 1e-4, quiet = True):
+                 actor_lr = 1e-5, critic_lr = 1e-4, update_steps = 100,
+                 quiet = True):
         
         self.actor = Actor(env, learning_rate = actor_lr, quiet = quiet, tau = tau)
         self.critic = Critic(env, learning_rate = critic_lr, quiet = quiet, tau = tau)
         
         self._batch_size = batch_size
         self._discount_rate = discount_rate
+        self._update_steps = update_steps
         
         # Memory
         self.memory = deque( maxlen = buffer_size )
@@ -219,37 +224,49 @@ class DDPGAgent():
     
     def train(self):
         
-        batch = random.sample(self.memory, self._batch_size)
+        actor_grad = 0
+        critic_grad = 0
+        for _ in range(self._update_steps):
+            batch = random.sample(self.memory, self._batch_size)
+            
+            states, actions, rewards, next_states, dones = zip(*batch)
+
+            states = torch.Tensor(states).float().to(device)
+            actions = torch.Tensor(actions).float().to(device).unsqueeze(1)
+            rewards = torch.Tensor(rewards).float().to(device)
+            next_states = torch.Tensor(next_states).float().to(device)
+            dones = torch.Tensor(dones).float().to(device)
+
+            target_actions = self.actor.act_target(next_states)
+            q_targets = rewards + (1.0 - dones) * self._discount_rate * self.critic.get_target_q_values(next_states, target_actions)
+            
+            mse_loss = nn.MSELoss()
+            
+            self.critic.optimizer.zero_grad()
+            q_values = self.critic.get_q_values(states, actions)
+            critic_loss = mse_loss( q_values, q_targets )
+            critic_loss.backward()
+            critic_grad += self.get_gradient_norm(self.critic.model)
+            self.critic.optimizer.step()
+
+            # freeze critic network for actor update, to save time populating grads
+            for p in self.critic.model.parameters():
+                p.requires_grad = False
+
+            self.actor.optimizer.zero_grad()
+            actor_loss = -self.critic.get_q_values( states, self.actor.model(states) ).mean()
+            # print("actor loss before update: {}".format(actor_loss.item()))
+            actor_loss.backward()
+            actor_grad += self.get_gradient_norm(self.actor.model)
+            self.actor.optimizer.step()
+            # actor_loss = -self.critic.get_q_values( states, self.actor.model(states) ).mean()
+            # print("actor loss after update: {}".format(actor_loss.item()))
+
+            # unfreeze critic network after actor update
+            for p in self.critic.model.parameters():
+                p.requires_grad = True
+
+            self.actor.update_target_network()
+            self.critic.update_target_network()
         
-        states, actions, rewards, next_states, dones = zip(*batch)
-
-        states = torch.Tensor(states).float().to(device)
-        actions = torch.Tensor(actions).float().to(device).unsqueeze(1)
-        rewards = torch.Tensor(rewards).float().to(device)
-        next_states = torch.Tensor(next_states).float().to(device)
-        dones = torch.Tensor(dones).float().to(device)
-
-        target_actions = self.actor.act_target(next_states)
-        q_targets = rewards + (1.0 - dones) * self._discount_rate * self.critic.get_target_q_values(next_states, target_actions)
-        
-        mse_loss = nn.MSELoss()
-        
-        q_values = self.critic.get_q_values(states, actions)
-        critic_loss = mse_loss( q_values, q_targets )
-
-        self.critic.optimizer.zero_grad()
-        critic_loss.backward()
-        critic_grad = self.get_gradient_norm(self.critic.model)
-        self.critic.optimizer.step()
-
-        actor_loss = -self.critic.get_q_values( states, self.actor.model(states) ).mean()
-
-        self.actor.optimizer.zero_grad()
-        actor_loss.backward()
-        actor_grad = self.get_gradient_norm(self.actor.model)
-        self.actor.optimizer.step()
-
-        self.actor.update_target_network()
-        self.critic.update_target_network()
-        
-        return actor_grad, critic_grad
+        return actor_grad / self._update_steps, critic_grad / self._update_steps

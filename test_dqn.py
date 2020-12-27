@@ -9,6 +9,7 @@ import trading_env
 
 import os
 from agent_v2.dqn_agent import DQNAgent
+import sys
 
 def main():
 
@@ -26,8 +27,6 @@ def main():
     rewards_test = []
     portfolio = []
 
-    print("Populating memory buffer...")
-
     while (len(agentDQN.memory) < 100000):
         state = env_trading.reset(date = date)
         state = np.reshape(state,200)
@@ -37,6 +36,8 @@ def main():
             state = np.reshape(state,200)
             next_state = next_state.reshape(200)
             agentDQN.store_step(state, action, reward, next_state, done)
+            print("\rPopulating memory buffer: {:5d}/100000".format(len(agentDQN.memory)), end="")
+            sys.stdout.flush()
             if done:
                 break
 
