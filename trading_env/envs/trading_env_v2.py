@@ -55,13 +55,9 @@ class TestTradingEnv(gym.Env):
         previous_value = self._get_portfolio_value()
         #One timestep goes by...
         self.steps += 1
-        s = self.historical_data.loc[self.start_index + self.steps - self.window_size + 1 : self.start_index + self.steps,
-                                     ["close","volume"]].values
-        s = np.array(s)
-        
-        #Normalizing to latest Closing price/Volume
-        s[:,0] /= s[-1,0]
-        s[:,1] /= s[-1,1]
+        s = self.historical_data.loc[self.start_index + self.steps - self.window_size + 1: self.start_index + self.steps,
+                                     ["close_pct","volume_pct"]].values
+                                     
         current_value = self._get_portfolio_value()
         r = ((current_value - previous_value)/self.portfolio_value) * 100
         
@@ -84,7 +80,8 @@ class TestTradingEnv(gym.Env):
         if date is None:
             self._set_start_index()
         else:
-            tmp_index = next((i for i, x in self.historical_data.iterrows() if not x["time"] < date), None)
+            # tmp_index = next((i for i, x in self.historical_data.iterrows() if not x["time"] < date), None)
+            tmp_index = self.historical_data.loc[self.historical_data['time'] >= date].index[0]
             if (tmp_index is not None and 
                 (tmp_index + self.episode_steps < self.historical_data.shape[0]) and 
                 (tmp_index >=self.window_size)):
@@ -96,12 +93,12 @@ class TestTradingEnv(gym.Env):
         self.crypto = self.start_crypto
         self.steps = 0
         self.portfolio_value = self._get_portfolio_value()
-        s = self.historical_data.loc[self.start_index + self.steps - self.window_size + 1 : self.start_index + self.steps,
-                                     ["close","volume"]].values
+        s = self.historical_data.loc[self.start_index + self.steps - self.window_size + 1: self.start_index + self.steps,
+                                     ["close_pct","volume_pct"]].values
         
         #Normalizing to latest Closing price/Volume
-        s[:,0] /= s[-1,0]
-        s[:,1] /= s[-1,1]
+        # s[:,0] /= s[-1,0]
+        # s[:,1] /= s[-1,1]
         return s
         
     def render(self, mode='human', close=False):
@@ -134,4 +131,10 @@ class TestTradingEnv(gym.Env):
         data_file = join(main_dir, "data", "train.pkl")
 
         print("Loading historical data file")
-        self.historical_data = pd.read_pickle(data_file)
+
+        # used for portfolio value
+        data = pd.read_pickle(data_file)
+        data[['close_pct', 'volume_pct']] = data[['close', 'volume']].pct_change()
+
+        self.historical_data = data
+

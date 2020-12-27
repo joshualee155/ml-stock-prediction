@@ -8,6 +8,7 @@ import gym
 import trading_env
 
 from agent_v2.ddpg_agent import DDPGAgent
+import sys
 
 def main():
 
@@ -16,7 +17,7 @@ def main():
 
     agentDDPG = DDPGAgent(env_trading, 
                         buffer_size=1000000,
-                        tau = 0.001, 
+                        tau = 0.01, 
                         actor_lr = 1e-4, 
                         critic_lr = 1e-4)
 
@@ -39,31 +40,35 @@ def main():
     actor_grads = []
     critic_grads = []
 
-    print("Populating memory buffer...")
-
     while (len(agentDDPG.memory) < 100000):
         state = env_trading.reset(date = date)
         state = np.reshape(state,200)
         while (True):
-            action = agentDDPG.actor.act(state)
-            action = np.clip( action + next(noise), -1, 1 )
+            # action = agentDDPG.actor.act(state)
+            # action = np.clip( action + next(noise), -1, 1 )
+            action = env_trading.action_space.sample()[0]
             next_state, reward, done, _ = env_trading.step(action)
-            state = np.reshape(state,200)
+            state = state.reshape(200)
             next_state = next_state.reshape(200)
             agentDDPG.store_step(state, action, reward, next_state, done)
+            print("\rPopulating memory buffer: {:5d}/100000".format(len(agentDDPG.memory)), end="")
+            sys.stdout.flush()
             if done:
                 break
 
+    print("\n")
 
     for e in range(NUM_EP):
         state = np.reshape(env_trading.reset(date=date), 200)
         score = 0
 
         rewards = []
+        actions = []
         while(True):
             action = agentDDPG.actor.act(state)
             action += next( noise )
             action = np.clip(action, -1, 1)
+            actions.append(action)
             next_state, reward, done, _ = env_trading.step( action )
             next_state = np.reshape(next_state, 200)
             score += reward
@@ -83,11 +88,11 @@ def main():
         # Testing session
         state = np.reshape(env_trading.reset( date = date_test ), 200)
         score_test = 0
-        actions = []
+        actions_test = []
         while(True):
             action = agentDDPG.actor.act(state)
             next_state, reward, done, _ = env_trading.step( action )
-            actions.append( action )
+            actions_test.append( action )
             next_state = np.reshape(next_state, 200)
             score_test += reward
             if done:
@@ -96,8 +101,9 @@ def main():
                 scores_test.append(score_test)
                 portfolios.append( env_trading.portfolio_value )
                 if e % 100 == 0:
-                    sample_actions.append( actions )
-                print("Episode: {}, Training reward: {:.2f}, Testing reward: {:.2f}, Actor grad: {:.4f}, Critic grad: {:.4f}".format(e, score, score_test, actor_grad, critic_grad))
+                    sample_actions.append( actions_test )
+                print("\rEpisode: {}, Training reward: {:.2f}, Testing reward: {:.2f}, Actor grad: {:.4f}, Critic grad: {:.4f}, Actions: {:.4f}+/-{:.4f}, Test Actions: {:.4f}+/-{:.4f}".format(e, score, score_test, actor_grad, critic_grad, np.mean(actions), np.std(actions), np.mean(actions_test), np.std(actions_test)), end="")
+                sys.stdout.flush()
                 break
             state = next_state
 
