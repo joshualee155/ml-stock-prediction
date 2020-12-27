@@ -31,10 +31,7 @@ class TestTradingEnv(gym.Env):
         self.begin = datetime.datetime(2017, 1, 1, 0, 0) # (YYYY/MM/DD/h/min)
         self.end = datetime.datetime(2018, 3, 1, 0, 0)
         
-        self.action_space = spaces.Box(low = -1.0, 
-                                       high = 1.0, 
-                                       shape = (1,), 
-                                       dtype = np.float32)
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low = np.finfo(np.float32).min, 
                                             high = np.finfo(np.float32).max, 
                                             shape = (self.window_size, self.n_features,), 
@@ -108,7 +105,7 @@ class TestTradingEnv(gym.Env):
         self.start_index = randint(self.window_size, len(self.historical_data["time"])-self.episode_steps-1)
         
     def _set_portfolio(self, action):
-        a = action
+        a = action - 1
         current_price = self.historical_data["close"][self.start_index + self.steps]
         prev_fiat = self.fiat
         prev_crypto = self.crypto

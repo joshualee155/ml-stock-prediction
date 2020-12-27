@@ -29,8 +29,8 @@ class Model(nn.Module):
         return self.output(x)
 
 class DQNAgent():
-    def __init__(self, env, gamma=0.99, buffer_size = 1000000,
-        epsilon=1.0, epsilon_min=0.01, epsilon_log_decay=0.999, 
+    def __init__(self, env, gamma=0.99, buffer_size = 1000000, update_steps = 100,
+        epsilon=1.0, epsilon_min=0.01, epsilon_log_decay=0.999, tau = 0.01,
         alpha=1e-4, alpha_decay=0.001, batch_size=128, quiet=False):
         
         self.env = env
@@ -41,6 +41,8 @@ class DQNAgent():
         self.epsilon_decay = epsilon_log_decay
         self.alpha = alpha
         self.alpha_decay = alpha_decay
+        self.update_steps = update_steps
+        self._tau = tau
         self._batch_size = batch_size
         self.quiet = quiet
         self._state_dim = np.prod(np.array(env.observation_space.shape))
@@ -54,22 +56,21 @@ class DQNAgent():
     def store_step(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
 
-    def act(self, state, step = None):
+    def act(self, state, greedy=False):
         state = torch.from_numpy(state).float().to(device)
-        if step is not None:
+        if greedy:
             # epsilon = max(self.epsilon_min, min(self.epsilon, 1.0 - math.log10((step + 1) * self.epsilon_decay)))
             epsilon = self.epsilon
             q_values = self.model(state)
             q_values = q_values.detach().cpu().numpy()
-            random_action = np.random.choice(3) - 1 # action space: -1, 0, 1
-            q_max_action = np.argmax(q_values) - 1
+            random_action = self.env.action_space.sample() # action space: 0, 1, 2
+            q_max_action = np.argmax(q_values)
             action = random_action if (np.random.random() <= epsilon) else q_max_action
             return action
-            print("here")
         else:
             q_values = self.model(state)
             q_values = q_values.detach().cpu().numpy()
-            return np.argmax(q_values) - 1
+            return np.argmax(q_values)
 
     def train(self):
         loss_fn = nn.MSELoss()
@@ -77,43 +78,44 @@ class DQNAgent():
         batch_size = self._batch_size
         x_batch, y_batch = [], []
         
-        batch = random.sample(self.memory, batch_size)
-        
-        states, actions, rewards, next_states, dones = zip(*batch)
-
-        states = torch.tensor(states).float().to(device)
-        actions = torch.tensor(actions).long().to(device)
-        rewards = torch.tensor(rewards).float().to(device)
-        next_states = torch.tensor(next_states).float().to(device)
-        dones = np.array(dones)
-        not_dones = torch.from_numpy(1.0-dones).float().to(device)
-
-        # need to convert actions to actions + 1: (-1, 0, 1) to (0, 1, 2)
-        y_preds = self.model(states).gather(1, actions.unsqueeze(1)+1).squeeze()
-        
-        with torch.no_grad():
-            y_targets = rewards + not_dones * self.gamma * self.target(next_states).detach().max(1)[0]
-
-        # loss = torch.mean( (y_preds - y_targets)**2 )
-        loss = loss_fn( y_preds, y_targets )
-        
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+        for _ in range(self.update_steps):
+            batch = random.sample(self.memory, batch_size)
             
+            states, actions, rewards, next_states, dones = zip(*batch)
+
+            states = torch.tensor(states).float().to(device)
+            actions = torch.tensor(actions).long().to(device)
+            rewards = torch.tensor(rewards).float().to(device)
+            next_states = torch.tensor(next_states).float().to(device)
+            dones = np.array(dones)
+            not_dones = torch.from_numpy(1.0-dones).float().to(device)
+
+            # actions: (0, 1, 2)
+            y_preds = self.model(states).gather(1, actions.unsqueeze(1)).squeeze()
+            
+            with torch.no_grad():
+                y_targets = rewards + not_dones * self.gamma * self.target(next_states).detach().max(1)[0]
+
+            # loss = torch.mean( (y_preds - y_targets)**2 )
+            
+            self.optimizer.zero_grad()
+            loss = loss_fn( y_preds, y_targets )
+            loss.backward()
+            self.optimizer.step()
+                
+            self.copy_target( self._tau )
+
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
         
-        self.copy_target( 0.01 )
-        # self.memory = []
-
     def copy_target(self, polyak=1.0):
         """copy model parameters to target network
 
         Args:
             polyak (float, optional): [Polyak averaging]. Defaults to 1.0.
         """
-        for var1, var2 in zip( self.model.parameters(), self.target.parameters() ):
-            var2 = polyak * var1 + (1-polyak) * var2
+        with torch.no_grad():
+            for var1, var2 in zip( self.model.parameters(), self.target.parameters() ):
+                var2 = polyak * var1 + (1-polyak) * var2
 
         

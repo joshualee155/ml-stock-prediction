@@ -13,7 +13,9 @@ import sys
 
 def main():
 
-    env_trading = gym.make('test_trading-v2')
+    env_trading = gym.make('test_trading-v1')
+    print(env_trading.action_space)
+
     NUM_EP = 400
 
     date = datetime.datetime( 2017, 7, 15, 0, 0 )
@@ -31,7 +33,7 @@ def main():
         state = env_trading.reset(date = date)
         state = np.reshape(state,200)
         while (True):
-            action = agentDQN.act(state, True)
+            action = env_trading.action_space.sample()
             next_state, reward, done, _ = env_trading.step(action)
             state = np.reshape(state,200)
             next_state = next_state.reshape(200)
@@ -41,13 +43,15 @@ def main():
             if done:
                 break
 
+    print("\n")
+
     for i in range( NUM_EP ):
         state = env_trading.reset(date = date)
         state = np.reshape(state,200)
         total_reward = 0
         
         while(True):
-            action = agentDQN.act(state, step=i)
+            action = agentDQN.act(state, True)
     #         print(action)
             next_state, reward, done, _ = env_trading.step(action)
             state = np.reshape(state,200)
@@ -75,7 +79,7 @@ def main():
             if done_test:
                 rewards_test.append(total_reward_test)
                 portfolio.append(env_trading.portfolio_value)
-                print("Episode: {}, Training reward: {}, Testing reward: {}".format(i, total_reward, total_reward_test))
+                print("Episode: {}, Training reward: {:.4f}, Testing reward: {:.4f}".format(i, total_reward, total_reward_test))
                 break
 
 if __name__ == "__main__":
