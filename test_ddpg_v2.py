@@ -51,6 +51,7 @@ def main():
             state = state.reshape(200)
             next_state = next_state.reshape(200)
             agentDDPG.store_step(state, action, reward, next_state, done)
+            state = next_state
             print("\rPopulating memory buffer: {:5d}/100000".format(len(agentDDPG.memory)), end="")
             sys.stdout.flush()
             if done:
