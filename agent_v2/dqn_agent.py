@@ -30,7 +30,7 @@ class Model(nn.Module):
 
 class DQNAgent():
     def __init__(self, env, gamma=0.99, buffer_size = 1000000, update_steps = 100,
-        epsilon=1.0, epsilon_min=0.01, epsilon_log_decay=0.999, tau = 0.01,
+        epsilon=1.0, epsilon_min=0.01, epsilon_log_decay=0.999, tau = 0.01, max_grad_norm = 10,
         alpha=1e-4, alpha_decay=0.001, batch_size=128, quiet=False):
         
         self.env = env
@@ -42,6 +42,7 @@ class DQNAgent():
         self.alpha = alpha
         self.alpha_decay = alpha_decay
         self.update_steps = update_steps
+        self.max_grad_norm = max_grad_norm
         self._tau = tau
         self._batch_size = batch_size
         self.quiet = quiet
@@ -52,6 +53,16 @@ class DQNAgent():
         # Align model network and target network
         self.copy_target(1.0)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.alpha)
+
+    def get_gradient_norm(self, model):
+
+        total_norm = 0.0
+        for p in model.parameters():
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** (1. / 2)
+
+        return total_norm
 
     def store_step(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -76,8 +87,8 @@ class DQNAgent():
         loss_fn = nn.MSELoss()
 
         batch_size = self._batch_size
-        x_batch, y_batch = [], []
         
+        grad = 0.0
         for _ in range(self.update_steps):
             batch = random.sample(self.memory, batch_size)
             
@@ -87,26 +98,36 @@ class DQNAgent():
             actions = torch.tensor(actions).long().to(device)
             rewards = torch.tensor(rewards).float().to(device)
             next_states = torch.tensor(next_states).float().to(device)
-            dones = np.array(dones)
-            not_dones = torch.from_numpy(1.0-dones).float().to(device)
+            dones = torch.tensor(dones).float().to(device)
 
-            # actions: (0, 1, 2)
-            y_preds = self.model(states).gather(1, actions.unsqueeze(1)).squeeze()
-            
             with torch.no_grad():
-                y_targets = rewards + not_dones * self.gamma * self.target(next_states).detach().max(1)[0]
+                y_targets = rewards + (1 - dones) * self.gamma * self.target(next_states).detach().max(1)[0]
 
             # loss = torch.mean( (y_preds - y_targets)**2 )
             
             self.optimizer.zero_grad()
+            # actions: (0, 1, 2)
+            y_preds = self.model(states).gather(1, actions.unsqueeze(1)).squeeze()
             loss = loss_fn( y_preds, y_targets )
+
+            # print("Loss before update: {}".format(loss.item()))
+
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+            grad += self.get_gradient_norm(self.model)
             self.optimizer.step()
+
+            # re-evaluate loss function
+            # y_preds = self.model(states).gather(1, actions.unsqueeze(1)).squeeze()
+            # loss = loss_fn( y_preds, y_targets )
+            # print("Loss after update: {}".format(loss.item()))
                 
-            self.copy_target( self._tau )
+        self.copy_target( 1.0 )
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+
+        return grad / self.update_steps
         
     def copy_target(self, polyak=1.0):
         """copy model parameters to target network
