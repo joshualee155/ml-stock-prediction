@@ -39,14 +39,15 @@ class Actor():
             
             def __init__(self, *args, **kwargs):
                 super(LSTM_Last, self).__init__()
-                self.lstm = nn.LSTM(*args, **kwargs)
+                # self.lstm = nn.LSTM(*args, **kwargs)
+                self.lstm = nn.RNN(*args, **kwargs)
             
             def forward(self, x):
                 x, _ = self.lstm(x)
                 return x[:, -1, :]
         
         model = nn.Sequential(
-            LSTM_Last(2, h1, 2, batch_first=True),
+            LSTM_Last(2, h1, 1, nonlinearity='relu', batch_first=True),
             nn.Linear(h1, h2),
             nn.ReLU(),
             nn.Linear(h2, h3),
@@ -109,7 +110,8 @@ class Critic():
             
             def __init__(self, *args, **kwargs):
                 super(LSTM_Last, self).__init__()
-                self.lstm = nn.LSTM(*args, **kwargs)
+                # self.lstm = nn.LSTM(*args, **kwargs)
+                self.lstm = nn.RNN(*args, **kwargs)
                 self.model = nn.Sequential(
                                 nn.Linear(h1+1, h2),
                                 nn.ReLU(),
@@ -123,7 +125,7 @@ class Critic():
                 x = torch.cat([x[:,-1,:], a], 1)
                 return self.model(x)
         
-        model = LSTM_Last(2, h1, 2, batch_first=True)
+        model = LSTM_Last(2, h1, 1, nonlinearity='relu', batch_first=True)
 
         return model
 
