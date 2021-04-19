@@ -45,6 +45,12 @@ class TestTradingEnv(gym.Env):
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+
+    def best_action(self):
+        """
+        Best action is the future looking trading strategy: long if next step return is positive
+        """
+        return np.sign( self.historical_data['close_pct'][self.start_index+self.steps+1] )+1
     
     def step(self, action):
         done = False

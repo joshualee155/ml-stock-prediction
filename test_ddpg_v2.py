@@ -9,6 +9,7 @@ import trading_env
 
 from agent_v2.ddpg_agent import DDPGAgent
 import sys
+from utils import max_reward
 
 def main():
 
@@ -31,7 +32,14 @@ def main():
             state += -theta*state+sigma*np.random.randn()
 
     date = datetime.datetime(2017, 7, 15, 0, 0)
-    date_test = datetime.datetime(2017, 7, 15, 0, 0)
+    date_test = datetime.datetime(2017, 9, 15, 0, 0)
+
+    m = max_reward( env_trading, date )
+    m_test = max_reward( env_trading, date_test )
+
+    print("Max Reward for env {} : {:.2f}".format(date.date(), m))
+    print("Max Reward for env {} : {:.2f}".format(date_test.date(), m_test))
+
     noise = UONoise()
     scores = []
     scores_test = []

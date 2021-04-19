@@ -9,6 +9,7 @@ import trading_env
 
 import os
 from agent_v2.dqn_agent import DQNAgent
+from utils import max_reward
 import sys
 
 def main():
@@ -19,7 +20,13 @@ def main():
     NUM_EP = 400
 
     date = datetime.datetime( 2017, 7, 15, 0, 0 )
-    date_test = datetime.datetime( 2017, 7, 15, 0, 0 )
+    date_test = datetime.datetime( 2017, 8, 15, 0, 0 )
+
+    m = max_reward( env_trading, date )
+    m_test = max_reward( env_trading, date_test )
+
+    print("Max Reward for env {} : {:.2f}".format(date.date(), m))
+    print("Max Reward for env {} : {:.2f}".format(date_test.date(), m_test))
 
     agentDQN = DQNAgent(env_trading, gamma=0.99, buffer_size = 100000,
                         epsilon=1.0, epsilon_min=0.01, epsilon_log_decay=0.999, 
